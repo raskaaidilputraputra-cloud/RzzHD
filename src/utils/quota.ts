@@ -6,6 +6,19 @@ const STORAGE_KEY = 'rzzhd_quota_usage_v2';
 export const MAX_QUOTA_PER_24H = 3;
 export const WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours in ms
 
+export function getClientId(): string {
+  try {
+    let id = localStorage.getItem('rzzhd_client_device_id');
+    if (!id) {
+      id = 'client_' + Date.now() + '_' + Math.random().toString(36).substring(2, 10);
+      localStorage.setItem('rzzhd_client_device_id', id);
+    }
+    return id;
+  } catch (e) {
+    return 'client_default';
+  }
+}
+
 export function getClientQuota(): {
   used: number;
   remaining: number;

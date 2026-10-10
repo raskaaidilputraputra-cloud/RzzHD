@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { VideoMetadata, QualityTarget, VideoEnhanceResult } from '../types.ts';
-import { getClientQuota, recordQuotaUsage } from '../utils/quota.ts';
+import { getClientQuota, recordQuotaUsage, getClientId } from '../utils/quota.ts';
 import { QuotaBadge, QuotaLimitAlertModal } from './QuotaDisplay.tsx';
 import {
   Video as VideoIcon,
@@ -171,6 +171,9 @@ export const VideoEnhancer: React.FC = () => {
 
       const response = await fetch('/api/video-enhance', {
         method: 'POST',
+        headers: {
+          'x-client-id': getClientId(),
+        },
         body: formData,
       });
 

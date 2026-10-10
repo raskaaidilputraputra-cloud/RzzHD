@@ -10,7 +10,6 @@ import { PhotoEnhancer } from './components/PhotoEnhancer.tsx';
 import { VideoEnhancer } from './components/VideoEnhancer.tsx';
 import { HistoryView } from './components/HistoryView.tsx';
 import { ApiStatusView } from './components/ApiStatusView.tsx';
-import { ContactOwnerFloating } from './components/ContactOwnerFloating.tsx';
 import { EnhanceResult } from './types.ts';
 
 export default function App() {
@@ -109,9 +108,6 @@ export default function App() {
 
         {activeTab === 'status' && <ApiStatusView />}
       </main>
-
-      {/* Floating Hubungi Owner WhatsApp Button */}
-      <ContactOwnerFloating />
     </div>
   );
 }

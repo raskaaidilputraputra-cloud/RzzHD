@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Logo } from './Logo.tsx';
 import { QuotaBadge } from './QuotaDisplay.tsx';
-import { Image, Video, History, Activity, Home, Sparkles, MessageCircle } from 'lucide-react';
+import { Image, Video, History, BarChart3, Home, Sparkles } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'home' | 'photo' | 'video' | 'history' | 'status';
@@ -93,8 +93,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onSelectTab, historyC
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
               }`}
             >
-              <Activity className="w-4 h-4" />
-              <span>Status API</span>
+              <BarChart3 className="w-4 h-4" />
+              <span>Statistik</span>
             </button>
           </nav>
 
@@ -102,21 +102,10 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onSelectTab, historyC
           <div className="flex items-center gap-2 sm:gap-3">
             <QuotaBadge compact />
 
-            <a
-              href="https://wa.me/62881022762735"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold transition-all shadow-xs"
-              title="Hubungi Owner via WhatsApp"
-            >
-              <MessageCircle className="w-3.5 h-3.5 fill-emerald-600 text-emerald-600" />
-              <span>Hubungi Owner</span>
-            </a>
-
             <button
               onClick={() => onSelectTab('status')}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-slate-200/80 bg-slate-50 hover:bg-sky-50 hover:text-sky-700 transition-colors"
-              title="Periksa kesehatan 3 API AI"
+              title="Periksa kesehatan 3 API AI & Statistik"
             >
               <span
                 className={`w-2 h-2 rounded-full ${
@@ -194,8 +183,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onSelectTab, historyC
             activeTab === 'status' ? 'text-sky-600 font-bold' : 'text-slate-400 font-medium'
           }`}
         >
-          <Activity className="w-5 h-5" />
-          <span className="text-[10px] mt-0.5">Status</span>
+          <BarChart3 className="w-5 h-5" />
+          <span className="text-[10px] mt-0.5">Statistik</span>
         </button>
       </nav>
     </>

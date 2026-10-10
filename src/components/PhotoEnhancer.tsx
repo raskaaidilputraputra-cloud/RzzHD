@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { BeforeAfterSlider } from './BeforeAfterSlider.tsx';
 import { EnhanceMode, QualityTarget, EnhanceResult } from '../types.ts';
-import { getClientQuota, recordQuotaUsage } from '../utils/quota.ts';
+import { getClientQuota, recordQuotaUsage, getClientId } from '../utils/quota.ts';
 import { QuotaBadge, QuotaLimitAlertModal } from './QuotaDisplay.tsx';
 import {
   UploadCloud,
@@ -145,6 +145,9 @@ export const PhotoEnhancer: React.FC<PhotoEnhancerProps> = ({ onSaveToHistory, i
 
       const response = await fetch('/api/enhance', {
         method: 'POST',
+        headers: {
+          'x-client-id': getClientId(),
+        },
         body: formData,
       });
 

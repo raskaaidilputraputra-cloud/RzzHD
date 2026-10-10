@@ -40,7 +40,7 @@ function cleanupOldFiles() {
 }
 setInterval(cleanupOldFiles, 30 * 60 * 1000);
 
-// Rate Limiter: 3 uses per 24 hours per client IP
+// Rate Limiter: 3 uses per 24 hours per client (identified by x-client-id device token or IP)
 interface RateLimitRecord {
   timestamps: number[];
 }
@@ -48,17 +48,21 @@ const ipQuotas = new Map<string, RateLimitRecord>();
 const RATE_LIMIT_MAX = 3;
 const RATE_LIMIT_WINDOW = 24 * 60 * 60 * 1000; // 24 hours in ms
 
-function getClientIp(req: Request): string {
+function getClientIdentifier(req: Request): string {
+  const customId = req.headers['x-client-id'];
+  if (typeof customId === 'string' && customId.trim().length > 3) {
+    return 'dev_' + customId.trim();
+  }
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string') {
-    return forwarded.split(',')[0].trim();
+    return 'ip_' + forwarded.split(',')[0].trim();
   }
-  return req.socket.remoteAddress || '127.0.0.1';
+  return 'ip_' + (req.socket.remoteAddress || '127.0.0.1');
 }
 
-function checkRateLimit(clientIp: string): { allowed: boolean; remaining: number; resetInMs: number } {
+function checkRateLimit(clientId: string): { allowed: boolean; remaining: number; resetInMs: number } {
   const now = Date.now();
-  const record = ipQuotas.get(clientIp) || { timestamps: [] };
+  const record = ipQuotas.get(clientId) || { timestamps: [] };
   record.timestamps = record.timestamps.filter((ts) => now - ts < RATE_LIMIT_WINDOW);
 
   if (record.timestamps.length >= RATE_LIMIT_MAX) {
@@ -77,18 +81,33 @@ function checkRateLimit(clientIp: string): { allowed: boolean; remaining: number
   return { allowed: true, remaining, resetInMs };
 }
 
-function consumeRateLimit(clientIp: string): { remaining: number; resetInMs: number } {
+function consumeRateLimit(clientId: string): { remaining: number; resetInMs: number } {
   const now = Date.now();
-  const record = ipQuotas.get(clientIp) || { timestamps: [] };
+  const record = ipQuotas.get(clientId) || { timestamps: [] };
   record.timestamps = record.timestamps.filter((ts) => now - ts < RATE_LIMIT_WINDOW);
   record.timestamps.push(now);
-  ipQuotas.set(clientIp, record);
+  ipQuotas.set(clientId, record);
 
   const remaining = Math.max(0, RATE_LIMIT_MAX - record.timestamps.length);
   const oldest = Math.min(...record.timestamps);
   const resetInMs = Math.max(0, RATE_LIMIT_WINDOW - (now - oldest));
   return { remaining, resetInMs };
 }
+
+// CORS Middleware to allow custom domains
+app.use((req: Request, res: Response, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-client-id'
+  );
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+});
 
 // Middleware
 app.use(express.json({ limit: '60mb' }));
@@ -106,12 +125,18 @@ const upload = multer({
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+const API_HEADERS = {
+  'User-Agent': USER_AGENT,
+  'Referer': 'https://api.nexadev.my.id/',
+  'Accept': '*/*',
+};
+
 /**
  * Quota Endpoint
  */
 app.get('/api/quota', (req: Request, res: Response) => {
-  const clientIp = getClientIp(req);
-  const info = checkRateLimit(clientIp);
+  const clientId = getClientIdentifier(req);
+  const info = checkRateLimit(clientId);
   res.json({
     max: RATE_LIMIT_MAX,
     remaining: info.remaining,
@@ -151,27 +176,26 @@ async function uploadToPublicHost(fileBuffer: Buffer, originalFilename: string, 
     console.warn('Uguu upload failed, trying fallback...', e.message);
   }
 
-  // 2. Fallback: Catbox.moe
+  // 2. Fallback: Qu.ax
   try {
     const formData = new FormData();
     const blob = new Blob([uint8], { type: mimeType });
-    formData.append('reqtype', 'fileupload');
-    formData.append('fileToUpload', blob, filename);
+    formData.append('files[]', blob, filename);
 
-    const catboxRes = await fetch('https://catbox.moe/user/api.php', {
+    const quaxRes = await fetch('https://qu.ax/upload.php', {
       method: 'POST',
       body: formData,
       headers: { 'User-Agent': USER_AGENT },
     });
 
-    if (catboxRes.ok) {
-      const catboxUrl = (await catboxRes.text()).trim();
-      if (catboxUrl.startsWith('http')) {
-        return catboxUrl;
+    if (quaxRes.ok) {
+      const quaxData = (await quaxRes.json()) as { success?: boolean; files?: Array<{ url: string }> };
+      if (quaxData.success && quaxData.files?.[0]?.url) {
+        return quaxData.files[0].url;
       }
     }
   } catch (e: any) {
-    console.warn('Catbox upload failed:', e.message);
+    console.warn('Qu.ax upload failed, trying fallback...', e.message);
   }
 
   // 3. Fallback: Tmpfiles.org
@@ -269,7 +293,7 @@ app.get('/api/health', async (_req: Request, res: Response) => {
  */
 async function callApi1Hd(publicImageUrl: string): Promise<string> {
   const res = await fetch(`https://api.nexadev.my.id/tools/hd/?image=${encodeURIComponent(publicImageUrl)}`, {
-    headers: { 'User-Agent': USER_AGENT },
+    headers: API_HEADERS,
     signal: AbortSignal.timeout(50000),
   });
   if (!res.ok) {
@@ -288,7 +312,7 @@ async function callApi1Hd(publicImageUrl: string): Promise<string> {
  */
 async function callApi2Upscale(publicImageUrl: string): Promise<{ localPath: string; serveUrl: string }> {
   const res = await fetch(`https://api.nexadev.my.id/api/upscale?url=${encodeURIComponent(publicImageUrl)}`, {
-    headers: { 'User-Agent': USER_AGENT },
+    headers: API_HEADERS,
     signal: AbortSignal.timeout(50000),
   });
   if (!res.ok) {
@@ -317,7 +341,7 @@ async function callApi2Upscale(publicImageUrl: string): Promise<{ localPath: str
  */
 async function callApi3Wink(publicImageUrl: string): Promise<string> {
   const res = await fetch(`https://api.nexadev.my.id/api/wink?url=${encodeURIComponent(publicImageUrl)}`, {
-    headers: { 'User-Agent': USER_AGENT },
+    headers: API_HEADERS,
     signal: AbortSignal.timeout(50000),
   });
   if (!res.ok) {
@@ -338,10 +362,10 @@ async function callApi3Wink(publicImageUrl: string): Promise<string> {
 app.post('/api/enhance', upload.single('image'), async (req: Request, res: Response): Promise<void> => {
   const startTime = Date.now();
   let uploadedTempFile: string | null = null;
-  const clientIp = getClientIp(req);
+  const clientId = getClientIdentifier(req);
 
   // Check rate limit first
-  const limitCheck = checkRateLimit(clientIp);
+  const limitCheck = checkRateLimit(clientId);
   if (!limitCheck.allowed) {
     res.status(429).json({
       success: false,
@@ -432,7 +456,7 @@ app.post('/api/enhance', upload.single('image'), async (req: Request, res: Respo
     }
 
     // Success! Consume 1 quota count
-    const quotaAfter = consumeRateLimit(clientIp);
+    const quotaAfter = consumeRateLimit(clientId);
     const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
 
     res.json({
@@ -473,10 +497,10 @@ app.post('/api/enhance', upload.single('image'), async (req: Request, res: Respo
 app.post('/api/video-enhance', upload.single('video'), async (req: Request, res: Response): Promise<void> => {
   const startTime = Date.now();
   let inputVideoPath: string | null = null;
-  const clientIp = getClientIp(req);
+  const clientId = getClientIdentifier(req);
 
   // Check rate limit
-  const limitCheck = checkRateLimit(clientIp);
+  const limitCheck = checkRateLimit(clientId);
   if (!limitCheck.allowed) {
     res.status(429).json({
       success: false,
@@ -542,7 +566,7 @@ app.post('/api/video-enhance', upload.single('video'), async (req: Request, res:
     }
 
     // Consume 1 quota
-    const quotaAfter = consumeRateLimit(clientIp);
+    const quotaAfter = consumeRateLimit(clientId);
     const elapsedSeconds = ((Date.now() - startTime) / 1000).toFixed(1);
 
     res.json({
@@ -572,7 +596,7 @@ app.post('/api/video-enhance', upload.single('video'), async (req: Request, res:
 });
 
 /**
- * Proxy Download endpoint to safely serve both images and videos
+ * Proxy Download endpoint to safely serve both images and videos across domains
  */
 app.get('/api/proxy-download', async (req: Request, res: Response): Promise<void> => {
   try {
@@ -584,9 +608,18 @@ app.get('/api/proxy-download', async (req: Request, res: Response): Promise<void
       return;
     }
 
-    // If it's a local temp file
-    if (rawUrl.startsWith('/temp/')) {
-      const localName = path.basename(rawUrl);
+    // Check if it's a local temp file (relative or full domain URL)
+    let urlPath = rawUrl;
+    try {
+      if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+        urlPath = new URL(rawUrl).pathname;
+      }
+    } catch {
+      urlPath = rawUrl;
+    }
+
+    if (urlPath.includes('/temp/')) {
+      const localName = path.basename(urlPath);
       const fullPath = path.join(TEMP_DIR, localName);
       if (fs.existsSync(fullPath)) {
         const isVideo = localName.endsWith('.mp4') || localName.endsWith('.mov');
